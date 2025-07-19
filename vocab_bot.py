@@ -107,24 +107,17 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error in daily vocab job: {e}")
 
-@app.route(f'/{BOT_TOKEN}', methods=["POST"])
+@app.route('/webhook', methods=["POST"])
 def webhook():
     logger.info("Received webhook update")
     try:
         json_data = request.get_json(force=True)
-        if not json_data:
-            logger.warning("No JSON data received in webhook")
-            return "ok", 200
         update = Update.de_json(json_data, telegram_app.bot)
-        if update:
-            telegram_app.process_update(update)
-            logger.info("Update processed successfully")
-        else:
-            logger.warning("Received invalid update")
+        telegram_app.process_update(update)
         return "ok", 200
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")
-        return "ok", 200  # Return 200 to avoid Telegram retrying
+        return "ok", 200
 
 @app.route("/", methods=["GET"])
 def health():
@@ -143,8 +136,8 @@ async def main():
         )
 
         await telegram_app.initialize()
-        logger.info(f"Setting webhook: {APP_URL}/{BOT_TOKEN}")
-        await telegram_app.bot.set_webhook(f"{APP_URL}/{BOT_TOKEN}")
+        logger.info(f"Setting webhook: {APP_URL}/webhook")
+        await telegram_app.bot.set_webhook(f"{APP_URL}/webhook")
         await telegram_app.start()
         logger.info("✅ Bot is ready!")
     except Exception as e:
@@ -158,8 +151,6 @@ def run_bot():
         logger.error(f"Error running bot: {e}")
 
 if __name__ == "__main__":
-    # Start the bot in a separate thread
     bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
-    # Run Flask app
     app.run(host="0.0.0.0", port=PORT)
