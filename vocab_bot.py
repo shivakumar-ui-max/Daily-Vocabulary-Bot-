@@ -88,12 +88,14 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
 
 # ✅ Webhook endpoint
+import asyncio
+from telegram import Update
+
 @app.route(f'/{BOT_TOKEN}', methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), telegram_app.bot)
-    telegram_app.update_queue.put_nowait(update)   # ✅ Correct way
+    asyncio.create_task(telegram_app.process_update(update))
     return "ok"
-
 
 # ✅ Health check
 @app.route("/", methods=["GET"])
