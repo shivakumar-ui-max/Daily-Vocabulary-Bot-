@@ -10,6 +10,7 @@ load_dotenv()
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 CHAT_ID = os.getenv("CHAT_ID")
+APP_URL = os.getenv("APP_URL")
 PORT = int(os.environ["PORT"])
 WEBHOOK_URL = "https://daily-vocabulary-bot.onrender.com/vocab-secret-123"  # Replace with your webhook path
 
@@ -62,9 +63,9 @@ def main():
 
     # Webhook start
     app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=WEBHOOK_URL
+    listen="0.0.0.0",
+    port=PORT,
+    webhook_url=f"{APP_URL}/{BOT_TOKEN}"
     )
 
 if __name__ == "__main__":
