@@ -1,10 +1,10 @@
 import os
-import asyncio
-from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram import Update
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from pymongo import MongoClient
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv()
 
@@ -12,20 +12,8 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 
 client = MongoClient(MONGO_URI)
-db = client["daily_vocab"]
-collection = db["words"]
-
-async def send_daily_word(application):
-    chat_ids = set()  # Replace this with actual chat_ids if stored in DB
-    cursor = collection.aggregate([{"$sample": {"size": 2}}])
-    words = list(cursor)
-
-    message = "📚 **Today's Vocabulary**\n"
-    for word in words:
-        message += f"\n**{word['english_word']}** - {word['meaning_en']}\n_{word['meaning_te']}_"
-
-    for chat_id in chat_ids:
-        await application.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
+db = client.vocab_bot
+words_collection = db.words
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -34,15 +22,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Use /history to see past words."
     )
 
+async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
+    chat_id = os.getenv("CHAT_ID")  # Set your chat id here or store in DB
+    today_words = words_collection.find_one({"date": datetime.now().strftime("%Y-%m-%d")})
+    if not today_words:
+        return  # No words for today yet
+
+    msg = "📚 *Today's Vocabulary*\n\n"
+    for i, word in enumerate(today_words["words"], 1):
+        msg += f"{i}. *{word['word']}* - {word['meaning']}\n"
+
+    await context.bot.send_message(chat_id=chat_id, text=msg, parse_mode="Markdown")
+
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cursor = collection.find().sort("_id", -1).limit(10)
-    words = list(cursor)
+    messages = []
+    for doc in words_collection.find().sort("date", -1).limit(5):
+        words = "\n".join([f"{w['word']} - {w['meaning']}" for w in doc["words"]])
+        messages.append(f"📅 {doc['date']}:\n{words}")
 
-    message = "**Last 10 Words:**\n"
-    for word in words:
-        message += f"\n**{word['english_word']}** - {word['meaning_en']}\n"
-
-    await update.message.reply_text(message, parse_mode="Markdown")
+    await update.message.reply_text("\n\n".join(messages))
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -51,7 +49,7 @@ def main():
     app.add_handler(CommandHandler("history", history))
 
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(send_daily_word, "cron", hour=8, minute=0, args=[app])
+    scheduler.add_job(send_daily_vocab, trigger="cron", hour=8, minute=0, args=[app.bot])
     scheduler.start()
 
     app.run_polling()
