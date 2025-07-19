@@ -96,14 +96,15 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("history", history))
 
-    app.job_queue.run_daily(send_daily_vocab, time=datetime.time(hour=8, minute=0))
-
-    app.post_init = set_webhook
-
-    app.run_webserver(
-        listen="0.0.0.0",
-        port=PORT
+    # Schedule daily vocab at 8:00 AM
+    app.job_queue.run_daily(
+        send_daily_vocab,
+        time=datetime.time(hour=8, minute=0),
     )
+
+    print("🤖 Bot started with polling...")
+    app.run_polling()
+
 
 
 if __name__ == "__main__":
