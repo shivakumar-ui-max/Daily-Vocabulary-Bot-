@@ -33,7 +33,6 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = f"📅 *{doc['date']}*\n\n"
 
         for i, word in enumerate(doc["words"], 1):
-            # English Part
             msg += (
                 f"{i}️⃣ *Word*: {word['word']}\n"
                 f"*Meaning*: {word['meaning_en']}\n"
@@ -42,7 +41,6 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"*Examples*:\n- " + "\n- ".join(word['examples_en']) + "\n\n"
             )
 
-            # Telugu Part with English headers
             msg += (
                 f"{i}️⃣ *Word*: {word['word_te']}\n"
                 f"*Meaning*: {word['meaning_te']}\n"
@@ -66,7 +64,6 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     msg = "📚 *Today's Vocabulary*\n\n"
 
     for i, word in enumerate(today_words["words"], 1):
-        # English
         msg += (
             f"{i}️⃣ *Word*: {word['word']}\n"
             f"*Meaning*: {word['meaning_en']}\n"
@@ -75,7 +72,6 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
             f"*Examples*:\n- " + "\n- ".join(word['examples_en']) + "\n\n"
         )
 
-        # Telugu (with English headers)
         msg += (
             f"{i}️⃣ *Word*: {word['word_te']}\n"
             f"*Meaning*: {word['meaning_te']}\n"
@@ -87,6 +83,11 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
 
 
+# Set webhook function
+async def set_webhook(app):
+    webhook_url = f"{APP_URL}/{BOT_TOKEN}"
+    await app.bot.set_webhook(url=webhook_url)
+
 
 # Main app
 def main():
@@ -95,19 +96,14 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("history", history))
 
-    # Schedule daily vocab at 8:00 AM
-    app.job_queue.run_daily(
-        send_daily_vocab,
-        time=datetime.time(hour=8, minute=0),
-    )
+    app.job_queue.run_daily(send_daily_vocab, time=datetime.time(hour=8, minute=0))
 
-    app.run_webhook(
-    listen="0.0.0.0",
-    port=PORT,
-    path=f"/{BOT_TOKEN}",
-    webhook_url=f"{APP_URL}/{BOT_TOKEN}"
-    )
+    app.post_init = set_webhook
 
+    app.run_webserver(
+        listen="0.0.0.0",
+        port=PORT
+    )
 
 
 if __name__ == "__main__":
