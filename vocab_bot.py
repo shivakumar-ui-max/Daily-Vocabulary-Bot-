@@ -29,11 +29,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # /history command
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     messages = []
-    for doc in words_collection.find().sort("date", -1).limit(5):
-        words = "\n".join([f"{w['word']} - {w['meaning']}" for w in doc["words"]])
-        messages.append(f"📅 {doc['date']}:\n{words}")
 
-    await update.message.reply_text("\n\n".join(messages))
+    for doc in words_collection.find().sort("date", -1).limit(5):
+        msg = f"📅 *{doc['date']}*\n\n"
+
+        for i, word in enumerate(doc["words"], 1):
+            # English Part
+            msg += (
+                f"{i}️⃣ *Word*: {word['word']}\n"
+                f"*Meaning*: {word['meaning_en']}\n"
+                f"*Synonyms*: {', '.join(word['synonyms_en'])}\n"
+                f"*Antonyms*: {', '.join(word['antonyms_en'])}\n"
+                f"*Examples*:\n- " + "\n- ".join(word['examples_en']) + "\n\n"
+            )
+
+            # Telugu Part with English headers
+            msg += (
+                f"{i}️⃣ *Word*: {word['word_te']}\n"
+                f"*Meaning*: {word['meaning_te']}\n"
+                f"*Synonyms*: {', '.join(word['synonyms_te'])}\n"
+                f"*Antonyms*: {', '.join(word['antonyms_te'])}\n"
+                f"*Examples*:\n- " + "\n- ".join(word['examples_te']) + "\n\n"
+            )
+
+        messages.append(msg)
+
+    await update.message.reply_text("\n\n".join(messages), parse_mode="Markdown")
+
 
 # Daily vocab sender
 async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
@@ -43,10 +65,29 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
         return
 
     msg = "📚 *Today's Vocabulary*\n\n"
+
     for i, word in enumerate(today_words["words"], 1):
-        msg += f"{i}. *{word['word']}* - {word['meaning']}\n"
+        # English
+        msg += (
+            f"{i}️⃣ *Word*: {word['word']}\n"
+            f"*Meaning*: {word['meaning_en']}\n"
+            f"*Synonyms*: {', '.join(word['synonyms_en'])}\n"
+            f"*Antonyms*: {', '.join(word['antonyms_en'])}\n"
+            f"*Examples*:\n- " + "\n- ".join(word['examples_en']) + "\n\n"
+        )
+
+        # Telugu (with English headers)
+        msg += (
+            f"{i}️⃣ *Word*: {word['word_te']}\n"
+            f"*Meaning*: {word['meaning_te']}\n"
+            f"*Synonyms*: {', '.join(word['synonyms_te'])}\n"
+            f"*Antonyms*: {', '.join(word['antonyms_te'])}\n"
+            f"*Examples*:\n- " + "\n- ".join(word['examples_te']) + "\n\n"
+        )
 
     await context.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
+
+
 
 # Main app
 def main():
