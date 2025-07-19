@@ -2,6 +2,7 @@ import os
 import datetime
 import asyncio
 import logging
+import threading
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import (
@@ -150,7 +151,6 @@ async def main():
         logger.error(f"Error starting bot: {e}")
         raise
 
-# Run the async main function in a separate thread to avoid blocking Flask
 def run_bot():
     try:
         asyncio.run(main())
@@ -158,9 +158,8 @@ def run_bot():
         logger.error(f"Error running bot: {e}")
 
 if __name__ == "__main__":
-    import threading
     # Start the bot in a separate thread
-    bot_thread = threading.Thread(target=run_bot)
+    bot_thread = threading.Thread(target=run_bot, daemon=True)
     bot_thread.start()
     # Run Flask app
     app.run(host="0.0.0.0", port=PORT)
