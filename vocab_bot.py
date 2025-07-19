@@ -112,12 +112,21 @@ def webhook():
     logger.info("Received webhook update")
     try:
         json_data = request.get_json(force=True)
+        if not json_data:
+            logger.warning("No JSON data received in webhook")
+            return "ok", 200
+        
         update = Update.de_json(json_data, telegram_app.bot)
-        telegram_app.process_update(update)
+        if update:
+            asyncio.run(telegram_app.process_update(update))
+            logger.info("Update processed successfully")
+        else:
+            logger.warning("Received invalid update")
         return "ok", 200
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")
         return "ok", 200
+
 
 @app.route("/", methods=["GET"])
 def health():
