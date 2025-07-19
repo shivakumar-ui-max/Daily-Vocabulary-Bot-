@@ -88,14 +88,12 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     await context.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
 
 # ✅ Webhook endpoint
-@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+@app.route(f'/{BOT_TOKEN}', methods=["POST"])
 def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, telegram_app.bot)
-
-    telegram_app.create_task(telegram_app.process_update(update))
-
+    update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+    telegram_app.update_queue.put_nowait(update)   # ✅ Correct way
     return "ok"
+
 
 # ✅ Health check
 @app.route("/", methods=["GET"])
