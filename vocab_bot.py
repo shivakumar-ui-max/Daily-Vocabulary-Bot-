@@ -1,9 +1,15 @@
 import os
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from telegram import Update
+import datetime
+from flask import Flask, request
 from pymongo import MongoClient
 from dotenv import load_dotenv
-import datetime
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+    Dispatcher,
+)
 
 load_dotenv()
 
@@ -17,6 +23,11 @@ client = MongoClient(MONGO_URI)
 db = client.vocab_bot
 words_collection = db.words
 
+app = Flask(__name__)
+
+telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
+dispatcher: Dispatcher = telegram_app.dispatcher
+
 # /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -28,7 +39,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # /history command
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     messages = []
-
     for doc in words_collection.find().sort("date", -1).limit(5):
         msg = f"📅 *{doc['date']}*\n\n"
 
@@ -52,7 +62,6 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         messages.append(msg)
 
     await update.message.reply_text("\n\n".join(messages), parse_mode="Markdown")
-
 
 # Daily vocab sender
 async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
@@ -82,30 +91,25 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
 
+# Flask route for webhook
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+def webhook():
+    update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+    telegram_app.update_queue.put(update)
+    return "OK"
 
-# Set webhook function
-async def set_webhook(app):
-    webhook_url = f"{APP_URL}/{BOT_TOKEN}"
-    await app.bot.set_webhook(url=webhook_url)
+# Set webhook before app starts
+@app.before_first_request
+def setup():
+    telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(CommandHandler("history", history))
 
-
-# Main app
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("history", history))
-
-    # Schedule daily vocab at 8:00 AM
-    app.job_queue.run_daily(
+    telegram_app.job_queue.run_daily(
         send_daily_vocab,
         time=datetime.time(hour=8, minute=0),
     )
 
-    print("🤖 Bot started with polling...")
-    app.run_polling()
-
-
+    telegram_app.bot.set_webhook(url=f"{APP_URL}/{BOT_TOKEN}")
 
 if __name__ == "__main__":
-    main()
+    app.run(host="0.0.0.0", port=PORT)

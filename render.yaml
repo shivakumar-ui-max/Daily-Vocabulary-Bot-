@@ -1,7 +1,0 @@
-services:
-  - type: worker
-    name: vocab-bot
-    runtime: python
-    plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: python vocab_bot.py
