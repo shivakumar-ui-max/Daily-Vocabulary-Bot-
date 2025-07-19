@@ -1,9 +1,6 @@
 import os
 import datetime
-import asyncio
 import logging
-import threading
-from flask import Flask, request
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -39,7 +36,7 @@ except Exception as e:
 db = client.vocab_bot
 words_collection = db.words
 
-app = Flask(__name__)
+# Telegram Bot
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 # Commands
@@ -105,26 +102,9 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
 
-# Flask Webhook
+# Run Webhook Server
 
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    logger.info("Received webhook update")
-    try:
-        json_data = request.get_json(force=True)
-        update = Update.de_json(json_data, telegram_app.bot)
-        asyncio.run(telegram_app.process_update(update))
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-    return "ok", 200
-
-@app.route("/", methods=["GET"])
-def home():
-    return "Bot is running!"
-
-# Telegram Bot Main Loop
-
-async def main():
+if __name__ == "__main__":
     telegram_app.add_handler(CommandHandler("start", start))
     telegram_app.add_handler(CommandHandler("history", history))
 
@@ -135,14 +115,8 @@ async def main():
         job_kwargs={"misfire_grace_time": 300}
     )
 
-    await telegram_app.initialize()
-    await telegram_app.bot.set_webhook(f"{APP_URL}/webhook")
-    await telegram_app.start()
-    logger.info("✅ Bot is ready!")
-
-def run_bot():
-    asyncio.run(main())
-
-if __name__ == "__main__":
-    threading.Thread(target=run_bot, daemon=True).start()
-    app.run(host="0.0.0.0", port=PORT)
+    telegram_app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=f"{APP_URL}/webhook"
+    )
