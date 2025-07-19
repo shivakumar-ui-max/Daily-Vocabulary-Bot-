@@ -26,7 +26,7 @@ app = Flask(__name__)
 
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-# /start command
+# ✅ /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🙏 Welcome to Daily Vocabulary Bot!\n"
@@ -34,7 +34,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Use /history to see past words."
     )
 
-# /history command
+# ✅ /history command
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     messages = []
 
@@ -59,7 +59,7 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("\n\n".join(messages), parse_mode="Markdown")
 
-# Daily vocab job
+# ✅ Daily job
 async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     today_words = words_collection.find_one({"date": today})
@@ -87,33 +87,41 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
 
-# Telegram webhook endpoint
+# ✅ Webhook endpoint
 @app.route(f"/{BOT_TOKEN}", methods=["POST"])
-async def webhook():
+async def telegram_webhook():
     data = request.get_json(force=True)
     update = Update.de_json(data, telegram_app.bot)
     await telegram_app.process_update(update)
     return "ok"
 
-# Health check
+# ✅ Health check
 @app.route("/", methods=["GET"])
 def health():
     return "Bot is running!"
 
-# Main async function
-async def main():
-    telegram_app.add_handler(CommandHandler("start", start))
-    telegram_app.add_handler(CommandHandler("history", history))
-
-    telegram_app.job_queue.run_daily(
-        send_daily_vocab,
-        time=datetime.time(hour=8, minute=0),
-    )
-
-    await telegram_app.bot.set_webhook(f"{APP_URL}/{BOT_TOKEN}")
-
-    app.run(host="0.0.0.0", port=PORT)
-
+# ✅ Entry point
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main())
+
+    async def run():
+        telegram_app.add_handler(CommandHandler("start", start))
+        telegram_app.add_handler(CommandHandler("history", history))
+
+        # Job queue at 8:00 AM IST
+        telegram_app.job_queue.run_daily(
+            send_daily_vocab,
+            time=datetime.time(hour=8, minute=0),
+            name="daily_vocab",
+            job_kwargs={"misfire_grace_time": 300}
+        )
+
+        await telegram_app.initialize()
+        await telegram_app.bot.set_webhook(f"{APP_URL}/{BOT_TOKEN}")
+        await telegram_app.start()
+
+        print("✅ Bot is ready!")
+
+        app.run(host="0.0.0.0", port=PORT)
+
+    asyncio.run(run())
