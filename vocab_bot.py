@@ -1,5 +1,6 @@
 import os
 import datetime
+import asyncio
 import logging
 from flask import Flask, request
 from telegram import Update
@@ -88,7 +89,7 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
         msg = "📚 *Today's Vocabulary*\n\n"
         for i, word in enumerate(today_words["words"], 1):
             msg += (
-                f"{i}️⃣ *Word*: {word['wordyou can add code hereword']}\n"
+                f"{i}️⃣ *Word*: {word['word']}\n"
                 f"*Meaning*: {word['meaning_en']}\n"
                 f"*Synonyms*: {', '.join(word['synonyms_en'])}\n"
                 f"*Antonyms*: {', '.join(word['antonyms_en'])}\n"
@@ -147,8 +148,19 @@ async def main():
         logger.info("✅ Bot is ready!")
     except Exception as e:
         logger.error(f"Error starting bot: {e}")
+        raise
+
+# Run the async main function in a separate thread to avoid blocking Flask
+def run_bot():
+    try:
+        asyncio.run(main())
+    except Exception as e:
+        logger.error(f"Error running bot: {e}")
 
 if __name__ == "__main__":
-    import asyncio
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    import threading
+    # Start the bot in a separate thread
+    bot_thread = threading.Thread(target=run_bot)
+    bot_thread.start()
+    # Run Flask app
+    app.run(host="0.0.0.0", port=PORT)
