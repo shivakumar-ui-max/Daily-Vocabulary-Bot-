@@ -1,6 +1,5 @@
 import os
 import datetime
-import asyncio
 import logging
 from flask import Flask, request
 from telegram import Update
@@ -11,7 +10,6 @@ from telegram.ext import (
 )
 from pymongo import MongoClient
 from dotenv import load_dotenv
-import ssl
 
 # Set up logging
 logging.basicConfig(
@@ -29,11 +27,7 @@ APP_URL = os.getenv("APP_URL")
 PORT = int(os.environ.get("PORT", 8080))  # Default to 8080 for Render
 
 # MongoDB connection
-client = MongoClient(
-    MONGO_URI,
-    tls=True,
-    tlsAllowInvalidCertificates=False,
-)
+client = MongoClient(MONGO_URI)
 try:
     client.admin.command('ping')
     logger.info("MongoDB connection successful")
@@ -94,7 +88,7 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
         msg = "📚 *Today's Vocabulary*\n\n"
         for i, word in enumerate(today_words["words"], 1):
             msg += (
-                f"{i}️⃣ *Word*: {word['word']}\n"
+                f"{i}️⃣ *Word*: {word['wordyou can add code hereword']}\n"
                 f"*Meaning*: {word['meaning_en']}\n"
                 f"*Synonyms*: {', '.join(word['synonyms_en'])}\n"
                 f"*Antonyms*: {', '.join(word['antonyms_en'])}\n"
@@ -112,45 +106,49 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in daily vocab job: {e}")
 
 @app.route(f'/{BOT_TOKEN}', methods=["POST"])
-async def webhook():
+def webhook():
     logger.info("Received webhook update")
     try:
-        update = Update.de_json(request.get_json(force=True), telegram_app.bot)
+        json_data = request.get_json(force=True)
+        if not json_data:
+            logger.warning("No JSON data received in webhook")
+            return "ok", 200
+        update = Update.de_json(json_data, telegram_app.bot)
         if update:
-            await telegram_app.update_queue.put(update)
-            logger.info("Update queued successfully")
+            telegram_app.process_update(update)
+            logger.info("Update processed successfully")
         else:
             logger.warning("Received invalid update")
-        return "ok"
+        return "ok", 200
     except Exception as e:
         logger.error(f"Error processing webhook: {e}")
-        return "error", 500
+        return "ok", 200  # Return 200 to avoid Telegram retrying
 
 @app.route("/", methods=["GET"])
 def health():
     return "Bot is running!"
 
+async def main():
+    try:
+        telegram_app.add_handler(CommandHandler("start", start))
+        telegram_app.add_handler(CommandHandler("history", history))
+
+        telegram_app.job_queue.run_daily(
+            send_daily_vocab,
+            time=datetime.time(hour=8, minute=0),
+            name="daily_vocab",
+            job_kwargs={"misfire_grace_time": 300}
+        )
+
+        await telegram_app.initialize()
+        logger.info(f"Setting webhook: {APP_URL}/{BOT_TOKEN}")
+        await telegram_app.bot.set_webhook(f"{APP_URL}/{BOT_TOKEN}")
+        await telegram_app.start()
+        logger.info("✅ Bot is ready!")
+    except Exception as e:
+        logger.error(f"Error starting bot: {e}")
+
 if __name__ == "__main__":
-    async def run():
-        try:
-            telegram_app.add_handler(CommandHandler("start", start))
-            telegram_app.add_handler(CommandHandler("history", history))
-
-            telegram_app.job_queue.run_daily(
-                send_daily_vocab,
-                time=datetime.time(hour=8, minute=0),
-                name="daily_vocab",
-                job_kwargs={"misfire_grace_time": 300}
-            )
-
-            await telegram_app.initialize()
-            logger.info(f"Setting webhook: {APP_URL}/{BOT_TOKEN}")
-            await telegram_app.bot.set_webhook(f"{APP_URL}/{BOT_TOKEN}")
-            await telegram_app.start()
-
-            logger.info("✅ Bot is ready!")
-            app.run(host="0.0.0.0", port=PORT)
-        except Exception as e:
-            logger.error(f"Error starting bot: {e}")
-
-    asyncio.run(run())
+    import asyncio
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
