@@ -11,7 +11,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 CHAT_ID = os.getenv("CHAT_ID")
 APP_URL = os.getenv("APP_URL")
-PORT = int(os.environ["PORT"])
+PORT = int(os.environ.get("PORT", "10000"))
 WEBHOOK_URL = "https://daily-vocabulary-bot.onrender.com/vocab-secret-123"  # Replace with your webhook path
 
 client = MongoClient(MONGO_URI)
