@@ -94,7 +94,7 @@ from telegram import Update
 @app.route(f'/{BOT_TOKEN}', methods=["POST"])
 def webhook():
     update = Update.de_json(request.get_json(force=True), telegram_app.bot)
-    asyncio.create_task(telegram_app.process_update(update))
+    asyncio.get_event_loop().create_task(telegram_app.process_update(update))
     return "ok"
 
 # ✅ Health check
