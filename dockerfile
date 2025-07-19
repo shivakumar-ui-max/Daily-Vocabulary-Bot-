@@ -1,15 +1,11 @@
-# Use Python 3.11 (to avoid weakref error)
-FROM python:3.11-slim
+FROM python:3.11
 
-# Set the working directory in the container
 WORKDIR /app
 
-# Copy all project files to /app in container
-COPY . .
+COPY . /app
 
-# Install dependencies
 RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
 
-# Run the bot when the container starts
+RUN pip install "python-telegram-bot[webhooks]" apscheduler pymongo python-dotenv
+
 CMD ["python", "vocab_bot.py"]
