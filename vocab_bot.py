@@ -1,92 +1,60 @@
+import os
+import asyncio
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from pymongo import MongoClient
 from dotenv import load_dotenv
+
 load_dotenv()
 
-import os
-import random
-from datetime import datetime, timedelta
-from pymongo import MongoClient
-from telegram.ext import Updater, CommandHandler
-from apscheduler.schedulers.background import BackgroundScheduler
-from pytz import timezone
-
-# MongoDB Setup
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
+
 client = MongoClient(MONGO_URI)
-db = client["vocab_bot"]
-words_col = db["words"]
-history_col = db["history"]
+db = client["daily_vocab"]
+collection = db["words"]
 
-def send_daily(context):
-    chat_id = os.getenv("CHAT_ID")
-    today = datetime.now().strftime("%Y-%m-%d")
+async def send_daily_word(application):
+    chat_ids = set()  # Replace this with actual chat_ids if stored in DB
+    cursor = collection.aggregate([{"$sample": {"size": 2}}])
+    words = list(cursor)
 
-    unused_words = list(words_col.find({"is_used": False}))
-    if len(unused_words) < 2:
-        context.bot.send_message(chat_id, "🎉 All vocabulary words have been completed!")
-        return
+    message = "📚 **Today's Vocabulary**\n"
+    for word in words:
+        message += f"\n**{word['english_word']}** - {word['meaning_en']}\n_{word['meaning_te']}_"
 
-    selected = random.sample(unused_words, 2)
-    message = "📚 **Daily Vocabulary**\n\n"
+    for chat_id in chat_ids:
+        await application.bot.send_message(chat_id=chat_id, text=message, parse_mode="Markdown")
 
-    for idx, word in enumerate(selected, 1):
-        message += f"{idx}️⃣\n"
-        message += f"WORD: {word['word']}\n"
-        message += f"MEANING: {word['meaning_en']}\n"
-        message += f"SYNONYMS: {', '.join(word['synonyms_en'])}\n"
-        message += f"ANTONYMS: {', '.join(word['antonyms_en'])}\n"
-        message += f"EXAMPLES:\n"
-        for ex in word['examples_en']:
-            message += f"- {ex}\n"
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🙏 Welcome to Daily Vocabulary Bot!\n"
+        "Every day at 8 AM, you will receive 2 new vocabulary words automatically.\n"
+        "Use /history to see past words."
+    )
 
-        message += f"\nWORD: {word['word_te']}\n"
-        message += f"MEANING: {word['meaning_te']}\n"
-        message += f"SYNONYMS: {', '.join(word['synonyms_te'])}\n"
-        message += f"ANTONYMS: {', '.join(word['antonyms_te'])}\n"
-        message += f"EXAMPLES:\n"
-        for ex in word['examples_te']:
-            message += f"- {ex}\n"
+async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    cursor = collection.find().sort("_id", -1).limit(10)
+    words = list(cursor)
 
-        message += "\n"
+    message = "**Last 10 Words:**\n"
+    for word in words:
+        message += f"\n**{word['english_word']}** - {word['meaning_en']}\n"
 
-        words_col.update_one({"_id": word["_id"]}, {"$set": {"is_used": True}})
-
-    history_col.insert_one({
-        "date": today,
-        "words": [w['word'] for w in selected]
-    })
-
-    cutoff_date = datetime.now() - timedelta(days=30)
-    history_col.delete_many({"date": {"$lt": cutoff_date.strftime("%Y-%m-%d")}})
-
-    context.bot.send_message(chat_id=chat_id, text=message)
-
-def history(update, context):
-    records = history_col.find().sort("date", 1)
-    message = "📜 **Last 30 Days Vocabulary History:**\n"
-    for rec in records:
-        message += f"{rec['date']}: {', '.join(rec['words'])}\n"
-    update.message.reply_text(message)
-
-def start(update, context):
-    update.message.reply_text("🙏 Welcome to Daily Vocabulary Bot!\nUse /history to view the last 30 days of words.")
+    await update.message.reply_text(message, parse_mode="Markdown")
 
 def main():
-    BOT_TOKEN = os.getenv("BOT_TOKEN")
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("history", history))
-    
-    india_tz = timezone('Asia/Kolkata')
-    # Scheduler setup
-    scheduler = BackgroundScheduler()
-    india_tz = timezone('Asia/Kolkata')
-    scheduler.add_job(send_daily, 'cron', hour=8, minute=0, timezone=india_tz, args=[updater.bot])
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("history", history))
+
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(send_daily_word, "cron", hour=8, minute=0, args=[app])
     scheduler.start()
 
-    updater.start_polling()
-    updater.idle()
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
