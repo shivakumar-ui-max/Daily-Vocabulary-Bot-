@@ -102,10 +102,12 @@ def main():
     )
 
     app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_path=f"/{BOT_TOKEN}"  # This is IMPORTANT!
+    listen="0.0.0.0",
+    port=PORT,
+    path=f"/{BOT_TOKEN}",
+    webhook_url=f"{APP_URL}/{BOT_TOKEN}"
     )
+
 
 
 if __name__ == "__main__":
