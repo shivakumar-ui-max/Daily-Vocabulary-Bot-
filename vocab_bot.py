@@ -1,6 +1,7 @@
 import os
 import datetime
 import asyncio
+import logging
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import (
@@ -10,6 +11,14 @@ from telegram.ext import (
 )
 from pymongo import MongoClient
 from dotenv import load_dotenv
+import ssl
+
+# Set up logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -19,13 +28,17 @@ CHAT_ID = os.getenv("CHAT_ID")
 APP_URL = os.getenv("APP_URL")
 PORT = int(os.environ.get("PORT", 8080))  # Use Render's default port
 
-# Test MongoDB connection
-client = MongoClient(MONGO_URI)
+# MongoDB connection
+client = MongoClient(
+    MONGO_URI,
+    tls=True,
+    tlsAllowInvalidCertificates=False,  # Set to True only for testing
+)
 try:
     client.admin.command('ping')
-    print("MongoDB connection successful")
+    logger.info("MongoDB connection successful")
 except Exception as e:
-    print(f"MongoDB connection failed: {e}")
+    logger.error(f"MongoDB connection failed: {e}")
 db = client.vocab_bot
 words_collection = db.words
 
@@ -33,7 +46,7 @@ app = Flask(__name__)
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    print(f"Received /start command from chat_id: {update.message.chat_id}")
+    logger.info(f"Received /start command from chat_id: {update.message.chat_id}")
     await update.message.reply_text(
         "🙏 Welcome to Daily Vocabulary Bot!\n"
         "Every day at 8 AM, you will receive 2 new vocabulary words automatically.\n"
@@ -41,6 +54,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info(f"Received /history command from chat_id: {update.message.chat_id}")
     messages = []
     for doc in words_collection.find().sort("date", -1).limit(5):
         msg = f"📅 *{doc['date']}*\n\n"
@@ -66,7 +80,7 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     today = datetime.datetime.now().strftime("%Y-%m-%d")
     today_words = words_collection.find_one({"date": today})
     if not today_words:
-        print("No words found for today")
+        logger.info("No words found for today")
         return
     msg = "📚 *Today's Vocabulary*\n\n"
     for i, word in enumerate(today_words["words"], 1):
@@ -88,7 +102,7 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
 
 @app.route(f'/{BOT_TOKEN}', methods=["POST"])
 async def webhook():
-    print("Received webhook update")
+    logger.info("Received webhook update")
     update = Update.de_json(request.get_json(force=True), telegram_app.bot)
     await telegram_app.update_queue.put(update)
     return "ok"
@@ -110,11 +124,11 @@ if __name__ == "__main__":
         )
 
         await telegram_app.initialize()
-        print(f"Setting webhook: {APP_URL}/{BOT_TOKEN}")
+        logger.info(f"Setting webhook: {APP_URL}/{BOT_TOKEN}")
         await telegram_app.bot.set_webhook(f"{APP_URL}/{BOT_TOKEN}")
         await telegram_app.start()
 
-        print("✅ Bot is ready!")
+        logger.info("✅ Bot is ready!")
         app.run(host="0.0.0.0", port=PORT)
 
     asyncio.run(run())
