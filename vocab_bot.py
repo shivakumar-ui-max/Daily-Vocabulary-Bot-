@@ -1,9 +1,7 @@
 import os
 import datetime
 import logging
-import requests
 import pytz
-from flask import Flask, request
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -26,22 +24,26 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 CHAT_ID = os.getenv("CHAT_ID")
 APP_URL = os.getenv("APP_URL")
+PORT = int(os.environ.get("PORT", 8080))
 
 # MongoDB Connection
 client = MongoClient(MONGO_URI)
+try:
+    client.admin.command('ping')
+    logger.info("MongoDB connection successful")
+except Exception as e:
+    logger.error(f"MongoDB connection failed: {e}")
+
 db = client.vocab_bot
 words_collection = db.words
 
-# Flask App
-app = Flask(__name__)
-
-# Telegram App
+# Telegram Bot
 telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 # Commands
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received /start from {update.effective_chat.id}")
+    logger.info(f"Received /start from {update.message.chat_id}")
     await update.message.reply_text(
         "🙏 Welcome to Daily Vocabulary Bot!\n"
         "Every day at 8 AM, you'll receive 2 new vocabulary words.\n"
@@ -49,7 +51,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received /history from {update.effective_chat.id}")
+    logger.info(f"Received /history from {update.message.chat_id}")
     messages = []
     for doc in words_collection.find().sort("date", -1).limit(5):
         msg = f"📅 *{doc['date']}*\n\n"
@@ -101,42 +103,21 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
 
-# Flask Routes
+# Run Webhook Server
 
-@app.route("/", methods=["GET"])
-def home():
-    return "OK", 200
+if __name__ == "__main__":
+    telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(CommandHandler("history", history))
 
-@app.route("/webhook", methods=["POST"])
-async def webhook():
-    data = request.get_json(force=True)
-    update = Update.de_json(data, telegram_app.bot)
-    await telegram_app.process_update(update)
-    return "OK", 200
+    telegram_app.job_queue.run_daily(
+        send_daily_vocab,
+        time=datetime.time(hour=8, minute=0, tzinfo=pytz.timezone("Asia/Kolkata")),
+        name="daily_vocab",
+        job_kwargs={"misfire_grace_time": 300}
+    )
 
-# Setup Telegram Handlers
-
-telegram_app.add_handler(CommandHandler("start", start))
-telegram_app.add_handler(CommandHandler("history", history))
-
-# Schedule Daily Job
-ist = pytz.timezone("Asia/Kolkata")
-telegram_app.job_queue.run_daily(
-    send_daily_vocab,
-    time=datetime.time(hour=8, minute=0, tzinfo=ist),
-    name="daily_vocab"
-)
-
-# Webhook Setup
-
-with telegram_app:
-    webhook_url = f"{APP_URL}/webhook"
-    res = requests.get(f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook?url={webhook_url}")
-    if res.status_code == 200:
-        logger.info("Webhook set successfully")
-    else:
-        logger.error(f"Webhook error: {res.text}")
-
-    telegram_app.initialize()
-    telegram_app.start()
-    telegram_app.updater.start_polling()  # Required for job queue
+    telegram_app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=f"{APP_URL}/webhook"
+    )
