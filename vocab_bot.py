@@ -97,33 +97,55 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
 
     if full_text:
         await context.bot.send_message(chat_id=CHAT_ID, text=msg + full_text, parse_mode="Markdown")
+
 async def main():
-    defaults = Defaults(parse_mode=ParseMode.MARKDOWN)
-    logger.info("Creating application")
-    application = ApplicationBuilder().token(BOT_TOKEN).defaults(defaults).build()
-    
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("history", history))
-
-    # Set webhook
-    webhook_url = f"{APP_URL}/{BOT_TOKEN}"
-    await application.bot.set_webhook(webhook_url)
-
-    # Only schedule jobs if JobQueue is available
-    if hasattr(application, 'job_queue') and application.job_queue:
-        application.job_queue.run_daily(
-            send_daily_vocab,
-            time=datetime.time(hour=8, minute=0, tzinfo=pytz.timezone("Asia/Kolkata")),
-            name="daily_vocab"
+    try:
+        defaults = Defaults(parse_mode=ParseMode.MARKDOWN)
+        application = (
+            ApplicationBuilder()
+            .token(BOT_TOKEN)
+            .defaults(defaults)
+            .build()
         )
-    else:
-        logger.warning("JobQueue not available. Skipping job scheduling.")
 
-    # Start webhook
-    await application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=BOT_TOKEN,
-        webhook_url=webhook_url
-    )
+        # Register commands
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("history", history))
+
+        # Set webhook
+        webhook_url = f"{APP_URL}/{BOT_TOKEN}"
+        await application.bot.set_webhook(webhook_url)
+        logger.info(f"Webhook set to: {webhook_url}")
+
+        # Schedule daily job (if JobQueue is available)
+        if hasattr(application, 'job_queue') and application.job_queue:
+            application.job_queue.run_daily(
+                send_daily_vocab,
+                time=datetime.time(hour=8, minute=0, tzinfo=pytz.timezone("Asia/Kolkata")),
+                name="daily_vocab"
+            )
+            logger.info("Scheduled daily job at 8 AM IST")
+        else:
+            logger.warning("JobQueue not available. Skipping scheduling.")
+
+        # Start the bot
+        await application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=BOT_TOKEN,
+            webhook_url=webhook_url
+        )
+
+    except Exception as e:
+        logger.critical(f"Fatal error: {e}", exc_info=True)
+        raise
+
+if __name__ == "__main__":
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(main())
+    except Exception as e:
+        logger.error(f"Bot crashed: {e}")
+    finally:
+        loop.close()
