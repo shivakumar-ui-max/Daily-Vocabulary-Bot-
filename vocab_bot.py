@@ -106,11 +106,18 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
-    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application = (
+        ApplicationBuilder()
+        .token(BOT_TOKEN)
+        .parse_mode("Markdown")
+        .build()
+    )
+
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("history", history))
 
     async def post_init(app):
+        await app.bot.set_webhook(url=f"{APP_URL}/{BOT_TOKEN}")
         app.job_queue.run_daily(
             send_daily_vocab,
             time=datetime.time(hour=8, minute=0, tzinfo=pytz.timezone("Asia/Kolkata")),
@@ -122,7 +129,7 @@ def main():
         port=PORT,
         url_path=BOT_TOKEN,
         webhook_url=f"{APP_URL}/{BOT_TOKEN}",
-        post_init=post_init  # ✅ Fix: must pass as keyword arg
+        post_init=post_init,
     )
 
 
