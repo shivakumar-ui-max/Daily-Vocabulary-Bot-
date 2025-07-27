@@ -70,7 +70,6 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for chunk in messages:
         await update.message.reply_text(chunk, parse_mode="Markdown")
 
-# Daily Job
 async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     logger.info("Running daily vocabulary job")
     msg = "📚 *Today's Vocabulary*\n\n"
@@ -122,11 +121,15 @@ async def main():
         raise
 
     logger.info("Scheduling daily vocabulary job")
-    application.job_queue.run_daily(
-        send_daily_vocab,
-        time=datetime.time(hour=8, minute=0, tzinfo=pytz.timezone("Asia/Kolkata")),
-        name="daily_vocab"
-    )
+    try:
+        application.job_queue.run_daily(
+            send_daily_vocab,
+            time=datetime.time(hour=8, minute=0, tzinfo=pytz.timezone("Asia/Kolkata")),
+            name="daily_vocab"
+        )
+    except Exception as e:
+        logger.error(f"Failed to schedule job: {e}")
+        raise
 
     logger.info("Starting webhook")
     try:
