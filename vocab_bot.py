@@ -10,6 +10,8 @@ from telegram.ext import (
 )
 from pymongo import MongoClient
 from dotenv import load_dotenv
+from telegram.constants import ParseMode
+from telegram.ext import Defaults
 
 
 # Setup logging
@@ -104,14 +106,10 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     if full_text:
         await context.bot.send_message(chat_id=CHAT_ID, text=msg + full_text, parse_mode="Markdown")
 
-
 def main():
-    application = (
-        ApplicationBuilder()
-        .token(BOT_TOKEN)
-        .parse_mode("Markdown")
-        .build()
-    )
+    defaults = Defaults(parse_mode=ParseMode.MARKDOWN)
+
+    application = ApplicationBuilder().token(BOT_TOKEN).defaults(defaults).build()
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("history", history))
