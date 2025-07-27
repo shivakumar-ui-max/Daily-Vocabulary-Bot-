@@ -11,6 +11,7 @@ from telegram.ext import (
 from pymongo import MongoClient
 from dotenv import load_dotenv
 
+
 # Setup logging
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -43,15 +44,16 @@ telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 # Commands
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received /start from {update.message.chat_id}")
+    logger.info(f"Received /start from {update.effective_chat.id}")
     await update.message.reply_text(
         "🙏 Welcome to Daily Vocabulary Bot!\n"
         "Every day at 8 AM, you'll receive 2 new vocabulary words.\n"
         "Use /history to see past words."
     )
 
+
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.info(f"Received /history from {update.message.chat_id}")
+    logger.info(f"Received /history from {update.effective_chat.id}")
     messages = []
     for doc in words_collection.find().sort("date", -1).limit(5):
         msg = f"📅 *{doc['date']}*\n\n"
@@ -103,21 +105,24 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
 
     await context.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
 
-# Run Webhook Server
-
-if __name__ == "__main__":
-    telegram_app.add_handler(CommandHandler("start", start))
-    telegram_app.add_handler(CommandHandler("history", history))
-
-    telegram_app.job_queue.run_daily(
+async def post_init(application):
+    application.job_queue.run_daily(
         send_daily_vocab,
         time=datetime.time(hour=8, minute=0, tzinfo=pytz.timezone("Asia/Kolkata")),
         name="daily_vocab",
         job_kwargs={"misfire_grace_time": 300}
     )
 
+# Run Webhook Server
+
+
+if __name__ == "__main__":
+    telegram_app.add_handler(CommandHandler("start", start))
+    telegram_app.add_handler(CommandHandler("history", history))
+
     telegram_app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        webhook_url=f"{APP_URL}/webhook"
+        webhook_url=f"{APP_URL}/webhook",
+        post_init=post_init
     )
