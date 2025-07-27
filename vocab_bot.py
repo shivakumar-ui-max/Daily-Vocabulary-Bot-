@@ -2,7 +2,6 @@ import os
 import datetime
 import logging
 import pytz
-import asyncio
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -27,7 +26,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 CHAT_ID = os.getenv("CHAT_ID")
 APP_URL = os.getenv("APP_URL")
-PORT = int(os.environ.get("PORT", 10000))  # Default to Render's port
+PORT = int(os.environ.get("PORT", 10000))
 
 # MongoDB Connection
 client = MongoClient(MONGO_URI)
@@ -40,7 +39,6 @@ except Exception as e:
 db = client.vocab_bot
 words_collection = db.words
 
-# Commands
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received /start from {update.effective_chat.id}")
     await update.message.reply_text(
@@ -98,8 +96,8 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     if full_text:
         await context.bot.send_message(chat_id=CHAT_ID, text=msg + full_text, parse_mode="Markdown")
 
-def run_bot():
-    """Run the bot with proper event loop handling"""
+def main():
+    """Run the bot with proper webhook configuration"""
     application = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
@@ -129,4 +127,4 @@ def run_bot():
     )
 
 if __name__ == "__main__":
-    run_bot()
+    main()
