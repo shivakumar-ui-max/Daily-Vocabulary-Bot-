@@ -2,6 +2,7 @@ import os
 import datetime
 import logging
 import pytz
+import asyncio
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -12,7 +13,6 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 from telegram.constants import ParseMode
 from telegram.ext import Defaults
-
 
 # Setup logging
 logging.basicConfig(
@@ -27,7 +27,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 CHAT_ID = os.getenv("CHAT_ID")
 APP_URL = os.getenv("APP_URL")
-PORT = int(os.environ.get("PORT", 8080))
+PORT = int(os.environ.get("PORT", 10000))  # Default to Render's port
 
 # MongoDB Connection
 client = MongoClient(MONGO_URI)
@@ -40,9 +40,7 @@ except Exception as e:
 db = client.vocab_bot
 words_collection = db.words
 
-
 # Commands
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received /start from {update.effective_chat.id}")
     await update.message.reply_text(
@@ -50,7 +48,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Every day at 8 AM, you'll receive new vocabulary words.\n"
         "Use /history to see recent words."
     )
-
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received /history from {update.effective_chat.id}")
@@ -73,11 +70,9 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for chunk in messages:
         await update.message.reply_text(chunk, parse_mode="Markdown")
 
-
 # Daily Job
 async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     logger.info("Running daily vocabulary job")
-
     msg = "📚 *Today's Vocabulary*\n\n"
     full_text = ""
 
@@ -95,41 +90,55 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
             f"*ఉదాహరణలు*:\n- " + "\n- ".join(word.get('Telugu_Examples', '').split(";")) + "\n\n"
         )
 
-        # Telegram max message size = 4096 chars
         if len(full_text) + len(entry) > 4000:
             await context.bot.send_message(chat_id=CHAT_ID, text=msg + full_text, parse_mode="Markdown")
-            full_text = ""  # reset for next batch
+            full_text = ""
 
         full_text += entry
 
-    # Send remaining
     if full_text:
         await context.bot.send_message(chat_id=CHAT_ID, text=msg + full_text, parse_mode="Markdown")
 
-def main():
+async def main():
     defaults = Defaults(parse_mode=ParseMode.MARKDOWN)
-
-    application = ApplicationBuilder().token(BOT_TOKEN).defaults(defaults).build()
+    logger.info("Creating application")
+    try:
+        application = ApplicationBuilder().token(BOT_TOKEN).defaults(defaults).build()
+        logger.info("Application created")
+    except Exception as e:
+        logger.error(f"Failed to build application: {e}")
+        raise
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("history", history))
 
-    async def post_init(app):
-        await app.bot.set_webhook(url=f"{APP_URL}/{BOT_TOKEN}")
-        app.job_queue.run_daily(
-            send_daily_vocab,
-            time=datetime.time(hour=8, minute=0, tzinfo=pytz.timezone("Asia/Kolkata")),
-            name="daily_vocab"
-        )
+    webhook_url = f"{APP_URL}/{BOT_TOKEN}"
+    logger.info(f"Setting webhook URL: {webhook_url}")
+    try:
+        await application.bot.set_webhook(url=webhook_url)
+        logger.info("Webhook set successfully")
+    except Exception as e:
+        logger.error(f"Failed to set webhook: {e}")
+        raise
 
-    application.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=BOT_TOKEN,
-        webhook_url=f"{APP_URL}/{BOT_TOKEN}",
-        post_init=post_init,
+    logger.info("Scheduling daily vocabulary job")
+    application.job_queue.run_daily(
+        send_daily_vocab,
+        time=datetime.time(hour=8, minute=0, tzinfo=pytz.timezone("Asia/Kolkata")),
+        name="daily_vocab"
     )
 
+    logger.info("Starting webhook")
+    try:
+        await application.run_webhook(
+            listen="0.0.0.0",
+            port=PORT,
+            url_path=BOT_TOKEN,
+            webhook_url=webhook_url
+        )
+    except Exception as e:
+        logger.error(f"Webhook setup failed: {e}")
+        raise
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
