@@ -38,8 +38,6 @@ except Exception as e:
 db = client.vocab_bot
 words_collection = db.words
 
-# Telegram Bot
-telegram_app = ApplicationBuilder().token(BOT_TOKEN).build()
 
 # Commands
 
@@ -47,82 +45,86 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received /start from {update.effective_chat.id}")
     await update.message.reply_text(
         "🙏 Welcome to Daily Vocabulary Bot!\n"
-        "Every day at 8 AM, you'll receive 2 new vocabulary words.\n"
-        "Use /history to see past words."
+        "Every day at 8 AM, you'll receive new vocabulary words.\n"
+        "Use /history to see recent words."
     )
 
 
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"Received /history from {update.effective_chat.id}")
     messages = []
-    for doc in words_collection.find().sort("date", -1).limit(5):
-        msg = f"📅 *{doc['date']}*\n\n"
-        for i, word in enumerate(doc["words"], 1):
-            msg += (
-                f"{i}️⃣ *Word*: {word['word']}\n"
-                f"*Meaning*: {word['meaning_en']}\n"
-                f"*Synonyms*: {', '.join(word['synonyms_en'])}\n"
-                f"*Antonyms*: {', '.join(word['antonyms_en'])}\n"
-                f"*Examples*:\n- " + "\n- ".join(word['examples_en']) + "\n\n"
-            )
-            msg += (
-                f"{i}️⃣ *Word*: {word['word_te']}\n"
-                f"*Meaning*: {word['meaning_te']}\n"
-                f"*Synonyms*: {', '.join(word['synonyms_te'])}\n"
-                f"*Antonyms*: {', '.join(word['antonyms_te'])}\n"
-                f"*Examples*:\n- " + "\n- ".join(word['examples_te']) + "\n\n"
-            )
+    for i, word in enumerate(words_collection.find().sort("_id", -1).limit(5), 1):
+        msg = (
+            f"{i}️⃣ *Word*: {word.get('English_Word', '')}\n"
+            f"*Meaning*: {word.get('English_Meaning', '')}\n"
+            f"*Synonyms*: {word.get('English_Synonyms', '')}\n"
+            f"*Antonyms*: {word.get('English_Antonyms', '')}\n"
+            f"*Examples*:\n- " + "\n- ".join(word.get('English_Examples', '').split(";")) + "\n\n"
+            f"{i}️⃣ *పదం*: {word.get('Telugu_Word', '')}\n"
+            f"*అర్థం*: {word.get('Telugu_Meaning', '')}\n"
+            f"*పర్యాయపదాలు*: {word.get('Telugu_Synonyms', '')}\n"
+            f"*విరుద్ధపదాలు*: {word.get('Telugu_Antonyms', '')}\n"
+            f"*ఉదాహరణలు*:\n- " + "\n- ".join(word.get('Telugu_Examples', '').split(";")) + "\n\n"
+        )
         messages.append(msg)
 
-    await update.message.reply_text("\n\n".join(messages), parse_mode="Markdown")
+    for chunk in messages:
+        await update.message.reply_text(chunk, parse_mode="Markdown")
+
 
 # Daily Job
-
 async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     logger.info("Running daily vocabulary job")
-    today = datetime.datetime.now().strftime("%Y-%m-%d")
-    today_words = words_collection.find_one({"date": today})
-    if not today_words:
-        logger.info("No words for today")
-        return
 
     msg = "📚 *Today's Vocabulary*\n\n"
-    for i, word in enumerate(today_words["words"], 1):
-        msg += (
-            f"{i}️⃣ *Word*: {word['word']}\n"
-            f"*Meaning*: {word['meaning_en']}\n"
-            f"*Synonyms*: {', '.join(word['synonyms_en'])}\n"
-            f"*Antonyms*: {', '.join(word['antonyms_en'])}\n"
-            f"*Examples*:\n- " + "\n- ".join(word['examples_en']) + "\n\n"
-        )
-        msg += (
-            f"{i}️⃣ *Word*: {word['word_te']}\n"
-            f"*Meaning*: {word['meaning_te']}\n"
-            f"*Synonyms*: {', '.join(word['synonyms_te'])}\n"
-            f"*Antonyms*: {', '.join(word['antonyms_te'])}\n"
-            f"*Examples*:\n- " + "\n- ".join(word['examples_te']) + "\n\n"
+    full_text = ""
+
+    for i, word in enumerate(words_collection.find(), 1):
+        entry = (
+            f"{i}️⃣ *Word*: {word.get('English_Word', '')}\n"
+            f"*Meaning*: {word.get('English_Meaning', '')}\n"
+            f"*Synonyms*: {word.get('English_Synonyms', '')}\n"
+            f"*Antonyms*: {word.get('English_Antonyms', '')}\n"
+            f"*Examples*:\n- " + "\n- ".join(word.get('English_Examples', '').split(";")) + "\n\n"
+            f"{i}️⃣ *పదం*: {word.get('Telugu_Word', '')}\n"
+            f"*అర్థం*: {word.get('Telugu_Meaning', '')}\n"
+            f"*పర్యాయపదాలు*: {word.get('Telugu_Synonyms', '')}\n"
+            f"*విరుద్ధపదాలు*: {word.get('Telugu_Antonyms', '')}\n"
+            f"*ఉదాహరణలు*:\n- " + "\n- ".join(word.get('Telugu_Examples', '').split(";")) + "\n\n"
         )
 
-    await context.bot.send_message(chat_id=CHAT_ID, text=msg, parse_mode="Markdown")
+        # Telegram max message size = 4096 chars
+        if len(full_text) + len(entry) > 4000:
+            await context.bot.send_message(chat_id=CHAT_ID, text=msg + full_text, parse_mode="Markdown")
+            full_text = ""  # reset for next batch
 
-async def post_init(application):
-    application.job_queue.run_daily(
-        send_daily_vocab,
-        time=datetime.time(hour=8, minute=0, tzinfo=pytz.timezone("Asia/Kolkata")),
-        name="daily_vocab",
-        job_kwargs={"misfire_grace_time": 300}
+        full_text += entry
+
+    # Send remaining
+    if full_text:
+        await context.bot.send_message(chat_id=CHAT_ID, text=msg + full_text, parse_mode="Markdown")
+
+
+def main():
+    application = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("history", history))
+
+    async def post_init(app):
+        app.job_queue.run_daily(
+            send_daily_vocab,
+            time=datetime.time(hour=8, minute=0, tzinfo=pytz.timezone("Asia/Kolkata")),
+            name="daily_vocab"
+        )
+
+    application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=BOT_TOKEN,
+        webhook_url=f"{APP_URL}/{BOT_TOKEN}",
+        post_init=post_init  # ✅ Fix: must pass as keyword arg
     )
-
-# Run Webhook Server
 
 
 if __name__ == "__main__":
-    telegram_app.add_handler(CommandHandler("start", start))
-    telegram_app.add_handler(CommandHandler("history", history))
-
-    telegram_app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=f"{APP_URL}/webhook",
-        post_init=post_init
-    )
+    main()
