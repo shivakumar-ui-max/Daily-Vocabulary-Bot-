@@ -144,9 +144,13 @@ async def main():
         raise
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
+    # Fix for Python 3.10+ event loop handling
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
     try:
         loop.run_until_complete(main())
+    except Exception as e:
+        logger.error(f"Error in main: {e}")
     finally:
-        loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()
