@@ -97,60 +97,33 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
 
     if full_text:
         await context.bot.send_message(chat_id=CHAT_ID, text=msg + full_text, parse_mode="Markdown")
-
 async def main():
     defaults = Defaults(parse_mode=ParseMode.MARKDOWN)
     logger.info("Creating application")
-    try:
-        application = ApplicationBuilder().token(BOT_TOKEN).defaults(defaults).build()
-        logger.info("Application created")
-    except Exception as e:
-        logger.error(f"Failed to build application: {e}")
-        raise
-
+    application = ApplicationBuilder().token(BOT_TOKEN).defaults(defaults).build()
+    
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("history", history))
 
+    # Set webhook
     webhook_url = f"{APP_URL}/{BOT_TOKEN}"
-    logger.info(f"Setting webhook URL: {webhook_url}")
-    try:
-        await application.bot.set_webhook(url=webhook_url)
-        logger.info("Webhook set successfully")
-    except Exception as e:
-        logger.error(f"Failed to set webhook: {e}")
-        raise
+    await application.bot.set_webhook(webhook_url)
 
-    logger.info("Scheduling daily vocabulary job")
-    try:
+    # Only schedule jobs if JobQueue is available
+    if hasattr(application, 'job_queue') and application.job_queue:
         application.job_queue.run_daily(
             send_daily_vocab,
             time=datetime.time(hour=8, minute=0, tzinfo=pytz.timezone("Asia/Kolkata")),
             name="daily_vocab"
         )
-    except Exception as e:
-        logger.error(f"Failed to schedule job: {e}")
-        raise
+    else:
+        logger.warning("JobQueue not available. Skipping job scheduling.")
 
-    logger.info("Starting webhook")
-    try:
-        await application.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            url_path=BOT_TOKEN,
-            webhook_url=webhook_url
-        )
-    except Exception as e:
-        logger.error(f"Webhook setup failed: {e}")
-        raise
-
-if __name__ == "__main__":
-    # Fix for Python 3.10+ event loop handling
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    try:
-        loop.run_until_complete(main())
-    except Exception as e:
-        logger.error(f"Error in main: {e}")
-    finally:
-        loop.close()
+    # Start webhook
+    await application.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path=BOT_TOKEN,
+        webhook_url=webhook_url
+    )
