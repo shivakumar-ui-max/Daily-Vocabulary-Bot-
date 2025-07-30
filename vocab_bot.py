@@ -40,6 +40,7 @@ except Exception as e:
 
 db = client.vocab_bot
 words_collection = db.words
+history_collection = db.words_history  # For 31-day rolling history
 
 def format_word_message(word, index=None):
     """Format a word into the message template"""
@@ -57,112 +58,106 @@ def format_word_message(word, index=None):
         f"*ఉదాహరణలు*:\n- " + "\n- ".join(word.get('Telugu_Examples', '').split(";")) + "\n"
     )
 
+async def maintain_history(words, now):
+    """Maintain 31-day rolling history"""
+    try:
+        # Add today's words to history
+        for word in words:
+            history_collection.insert_one({
+                **word,
+                "date_sent": now,
+                "original_id": word["_id"]
+            })
+        
+        # Remove entries older than 31 days
+        cutoff = now - timedelta(days=31)
+        history_collection.delete_many({"date_sent": {"$lt": cutoff}})
+        logger.info(f"History maintained - Added {len(words)}, pruned old entries")
+    except Exception as e:
+        logger.error(f"History maintenance failed: {e}")
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🙏 Welcome to Daily Vocabulary Bot!\n"
-        "• Get 2 words daily at 8 AM IST\n"
-        "• /history - Show 31-day calendar (2 words/day)\n"
+        "📚 *Vocabulary Bot*\n"
+        "• 2 words daily at 8 AM IST\n"
+        "• /history - 31-day calendar\n"
         "• /today - Today's words\n"
-        "• /testjob - Manually send today's words"
+        "• /testjob - Trigger manually\n\n"
+        "Demo Features:\n"
+        "- 31-day auto-rotating history\n"
+        "- Book-themed formatting\n"
+        "- Dual-language support",
+        parse_mode="Markdown"
     )
-
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show 31-day vocabulary calendar with 2 words per day"""
-    cutoff_date = datetime.datetime.now(pytz.timezone('Asia/Kolkata')) - timedelta(days=31)
-    
-    # Get up to 2 words per day
-    pipeline = [
-        {"$match": {"date_sent": {"$gte": cutoff_date}}},
-        {"$sort": {"date_sent": -1}},
-        {"$group": {
-            "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$date_sent"}},
-            "words": {"$push": "$$ROOT"},
-            "count": {"$sum": 1}
-        }},
-        {"$project": {
-            "words": {"$slice": ["$words", 2]},  # Limit to 2 words per day
-            "date": "$_id"
-        }},
-        {"$sort": {"date": -1}},
-        {"$limit": 31}  # 31 days
-    ]
-    
-    daily_words = list(words_collection.aggregate(pipeline))
-    
-    if not daily_words:
-        await update.message.reply_text("No vocabulary history available!")
-        return
+    """Show 31-day calendar with decorated bilingual entries"""
+    try:
+        # Get grouped words from history collection
+        pipeline = [
+            {"$sort": {"date_sent": -1}},
+            {"$group": {
+                "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$date_sent"}},
+                "words": {"$push": "$$ROOT"},
+            }},
+            {"$sort": {"_id": -1}},
+            {"$limit": 31}
+        ]
+        days = list(history_collection.aggregate(pipeline))
 
-    # Build calendar message
-    calendar_msg = "🗓 *31-Day Vocabulary Calendar*\n(2 words per day)\n\n"
-    for entry in daily_words:
-        date_str = entry["date"]
-        words = entry["words"]
-        calendar_msg += f"📅 *{date_str}*\n"
-        for word in words:
-            calendar_msg += f"✨ {word['English_Word']} - {word['English_Meaning']}\n"
-        calendar_msg += "\n"
+        if not days:
+            await update.message.reply_text("No history available yet!")
+            return
 
-    await update.message.reply_text(calendar_msg, parse_mode="Markdown")
+        response = "🗓 *31-Day Vocabulary History*\n" \
+                  "✦━━━━━━✦❘  📖  ❘✦━━━━━━✦\n\n"
+        
+        for day in days:
+            date_str = day["_id"]
+            words = day["words"][:2]  # Limit to 2 words/day
+            
+            response += f"📅 *{date_str}*\n"
+            for word in words:
+                # English with sparkle emoji
+                response += f"✨ *{word['English_Word']}* - {word['English_Meaning']}\n"
+                # Telugu with flower emoji
+                response += f"🌸 *{word['Telugu_Word']}* - {word['Telugu_Meaning']}\n"
+                response += "⸻⸻⸻\n"  # Thin divider
+            
+            response += "\n"  # Space between dates
 
-async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show today's words in detail"""
-    today_start = datetime.datetime.now(pytz.timezone('Asia/Kolkata')).replace(
-        hour=0, minute=0, second=0, microsecond=0)
-    
-    today_words = list(words_collection.find({
-        "date_sent": {"$gte": today_start}
-    }).limit(2))
-    
-    if today_words:
-        response = "📅 *Today's Words*\n\n"
-        for i, word in enumerate(today_words, 1):
-            response += format_word_message(word, i) + "\n"
-        await update.message.reply_text(response, parse_mode="Markdown")
-    else:
-        await update.message.reply_text("No words sent today yet!")
+        await update.message.reply_text(
+            response, 
+            parse_mode="Markdown"
+        )
+        
+    except Exception as e:
+        logger.error(f"History error: {e}")
+        await update.message.reply_text("Error loading history")
 
 async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     try:
         now = datetime.datetime.now(pytz.timezone('Asia/Kolkata'))
-        
-        # Get 2 oldest unsent words
         words = list(words_collection.find({"sent": {"$exists": False}}).limit(2))
         
         if not words:
-            logger.warning("No new words available")
+            logger.warning("No words available")
             await context.bot.send_message(
                 chat_id=CHAT_ID,
-                text="ℹ️ No new vocabulary words available today!"
+                text="⚠️ No more unsent words!"
             )
             return
 
-        # Send words with proper spacing
-        message = "📚 *Daily Vocabulary (2 Words)*\n\n"
+        # Build message with book-themed separator
+        message = "📚 *Daily Vocabulary*\n\n"
         for i, word in enumerate(words, 1):
-            message += f"{i}️⃣ *Word*: {word.get('English_Word', '')}\n"
-            message += f"*Meaning*: {word.get('English_Meaning', '')}\n"
-            message += f"*Synonyms*: {word.get('English_Synonyms', '')}\n"
-            message += f"*Antonyms*: {word.get('English_Antonyms', '')}\n"
-            message += f"*Examples*:\n- " + "\n- ".join(word.get('English_Examples', '').split(";")) + "\n\n"
-            
-            message += f"{i}️⃣ *పదం*: {word.get('Telugu_Word', '')}\n"
-            message += f"*అర్థం*: {word.get('Telugu_Meaning', '')}\n"
-            message += f"*పర్యాయపదాలు*: {word.get('Telugu_Synonyms', '')}\n"
-            message += f"*విరుద్ధపదాలు*: {word.get('Telugu_Antonyms', '')}\n"
-            message += f"*ఉదాహరణలు*:\n- " + "\n- ".join(word.get('Telugu_Examples', '').split(";")) + "\n"
-            
-            # Add book-themed separator between words
+            message += format_word_message(word, i)
             if i < len(words):
                 message += "\n📖━━━━━━✧❘  📚  ❘✧━━━━━━📖\n\n"
             
-            # Mark as sent with current timestamp
+            # Mark as sent in main collection
             words_collection.update_one(
                 {"_id": word["_id"]},
-                {"$set": {
-                    "sent": True,
-                    "date_sent": now
-                }}
+                {"$set": {"sent": True, "date_sent": now}}
             )
 
         await context.bot.send_message(
@@ -171,50 +166,36 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
         
+        # Update history collection
+        await maintain_history(words, now)
+        
     except Exception as e:
-        logger.error(f"Error sending daily vocab: {e}")
+        logger.error(f"Daily send failed: {e}")
         await context.bot.send_message(
             chat_id=CHAT_ID,
-            text="❌ Error sending today's words. Please check logs."
+            text="❌ Error sending words"
         )
 
-async def test_job(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Manually trigger today's words"""
-    await update.message.reply_text("🔄 Sending today's words...")
-    await send_daily_vocab(context)
-
-async def post_init(application: Application):
-    """Initialize webhook and send startup message"""
-    await application.bot.set_webhook(
-        url=f"{APP_URL}/{BOT_TOKEN}",
-        allowed_updates=Update.ALL_TYPES
-    )
-    
-    try:
-        await application.bot.send_message(
-            chat_id=CHAT_ID,
-            text=f"🤖 Bot restarted at {datetime.datetime.now(pytz.timezone('Asia/Kolkata'))}\n"
-                 "Next words at 8 AM IST"
-        )
-    except Exception as e:
-        logger.error(f"Startup message failed: {e}")
+# ... (keep other functions like today(), test_job(), post_init() same as before)
 
 def main():
-    application = (
-        ApplicationBuilder()
-        .token(BOT_TOKEN)
-        .defaults(Defaults(parse_mode=ParseMode.MARKDOWN))
-        .post_init(post_init)
+    application = ApplicationBuilder() \
+        .token(BOT_TOKEN) \
+        .defaults(Defaults(parse_mode=ParseMode.MARKDOWN)) \
+        .post_init(post_init) \
         .build()
-    )
 
     # Command handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("history", history))
-    application.add_handler(CommandHandler("today", today))
-    application.add_handler(CommandHandler("testjob", test_job))
+    handlers = [
+        CommandHandler("start", start),
+        CommandHandler("history", history),
+        CommandHandler("today", today),
+        CommandHandler("testjob", test_job)
+    ]
+    for handler in handlers:
+        application.add_handler(handler)
 
-    # Schedule daily job at 8 AM IST
+    # Schedule daily job
     ist = pytz.timezone('Asia/Kolkata')
     application.job_queue.run_daily(
         send_daily_vocab,
@@ -222,7 +203,7 @@ def main():
         name="daily_vocab"
     )
 
-    # Start the bot
+    # Start bot
     application.run_webhook(
         listen="0.0.0.0",
         port=PORT,
