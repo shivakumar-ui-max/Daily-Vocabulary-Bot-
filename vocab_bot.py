@@ -137,10 +137,24 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Send words with numbering
+        # Send words with proper spacing
         message = "📚 *Daily Vocabulary (2 Words)*\n\n"
         for i, word in enumerate(words, 1):
-            message += format_word_message(word, i)
+            message += f"{i}️⃣ *Word*: {word.get('English_Word', '')}\n"
+            message += f"*Meaning*: {word.get('English_Meaning', '')}\n"
+            message += f"*Synonyms*: {word.get('English_Synonyms', '')}\n"
+            message += f"*Antonyms*: {word.get('English_Antonyms', '')}\n"
+            message += f"*Examples*:\n- " + "\n- ".join(word.get('English_Examples', '').split(";")) + "\n\n"
+            
+            message += f"{i}️⃣ *పదం*: {word.get('Telugu_Word', '')}\n"
+            message += f"*అర్థం*: {word.get('Telugu_Meaning', '')}\n"
+            message += f"*పర్యాయపదాలు*: {word.get('Telugu_Synonyms', '')}\n"
+            message += f"*విరుద్ధపదాలు*: {word.get('Telugu_Antonyms', '')}\n"
+            message += f"*ఉదాహరణలు*:\n- " + "\n- ".join(word.get('Telugu_Examples', '').split(";")) + "\n"
+            
+            # Add book-themed separator between words
+            if i < len(words):
+                message += "\n📖━━━━━━✧❘  📚  ❘✧━━━━━━📖\n\n"
             
             # Mark as sent with current timestamp
             words_collection.update_one(
