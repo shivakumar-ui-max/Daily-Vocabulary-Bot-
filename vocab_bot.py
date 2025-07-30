@@ -89,6 +89,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "- Dual-language support",
         parse_mode="Markdown"
     )
+
 async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Show 31-day calendar with decorated bilingual entries"""
     try:
@@ -134,6 +135,23 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"History error: {e}")
         await update.message.reply_text("Error loading history")
 
+async def today(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Show today's words in detail"""
+    today_start = datetime.datetime.now(pytz.timezone('Asia/Kolkata')).replace(
+        hour=0, minute=0, second=0, microsecond=0)
+    
+    today_words = list(words_collection.find({
+        "date_sent": {"$gte": today_start}
+    }).limit(2))
+    
+    if today_words:
+        response = "📅 *Today's Words*\n\n"
+        for i, word in enumerate(today_words, 1):
+            response += format_word_message(word, i) + "\n"
+        await update.message.reply_text(response, parse_mode="Markdown")
+    else:
+        await update.message.reply_text("No words sent today yet!")
+
 async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
     try:
         now = datetime.datetime.now(pytz.timezone('Asia/Kolkata'))
@@ -157,7 +175,10 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
             # Mark as sent in main collection
             words_collection.update_one(
                 {"_id": word["_id"]},
-                {"$set": {"sent": True, "date_sent": now}}
+                {"$set": {
+                    "sent": True,
+                    "date_sent": now
+                }}
             )
 
         await context.bot.send_message(
@@ -176,7 +197,26 @@ async def send_daily_vocab(context: ContextTypes.DEFAULT_TYPE):
             text="❌ Error sending words"
         )
 
-# ... (keep other functions like today(), test_job(), post_init() same as before)
+async def test_job(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Manually trigger today's words"""
+    await update.message.reply_text("🔄 Sending today's words...")
+    await send_daily_vocab(context)
+
+async def post_init(application: Application):
+    """Initialize webhook and send startup message"""
+    await application.bot.set_webhook(
+        url=f"{APP_URL}/{BOT_TOKEN}",
+        allowed_updates=Update.ALL_TYPES
+    )
+    
+    try:
+        await application.bot.send_message(
+            chat_id=CHAT_ID,
+            text=f"🤖 Bot restarted at {datetime.datetime.now(pytz.timezone('Asia/Kolkata'))}\n"
+                 "Next words at 8 AM IST"
+        )
+    except Exception as e:
+        logger.error(f"Startup message failed: {e}")
 
 def main():
     application = ApplicationBuilder() \
